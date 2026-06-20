@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import math
+from fastapi import Response
+
 
 app = FastAPI()
 
@@ -10,7 +12,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["POST"],
+    allow_methods=["POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -27,6 +29,11 @@ def p95(values):
     values = sorted(values)
     index = math.ceil(0.95 * len(values)) - 1
     return values[index]
+
+
+@app.options("/")
+def options():
+    return Response()
 
 
 @app.post("/")
