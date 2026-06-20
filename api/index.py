@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
@@ -7,40 +7,15 @@ import os
 
 app = FastAPI()
 
-# Enable CORS for all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
-# Handle preflight requests
-@app.options("/{path:path}")
-def options(path: str):
-    return Response(status_code=200)
-
-
-# Optional: prevent 405 on GET /
-@app.get("/")
-def root():
-    return {"status": "ok"}
-
-
-# Load telemetry file
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-FILE = os.path.join(BASE_DIR, "telemetry.json")
-
-with open(FILE, "r") as f:
+with open(os.path.join(BASE_DIR, "telemetry.json")) as f:
     telemetry = json.load(f)
 
 
@@ -50,12 +25,10 @@ class RequestBody(BaseModel):
 
 
 def p95(values):
+    values = sorted(values)
     if not values:
         return 0
-
-    values = sorted(values)
-    idx = math.ceil(0.95 * len(values)) - 1
-    return values[idx]
+    return values[math.ceil(0.95 * len(values)) - 1]
 
 
 @app.post("/")
@@ -70,11 +43,12 @@ def analytics(req: RequestBody):
 
         latencies = [r["latency_ms"] for r in rows]
 
-        # Use whichever field exists
-        if "uptime_pct" in rows[0]:
-            uptimes = [r["uptime_pct"] for r in rows]
-        else:
-            uptimes = [r["uptime"] for r in rows]
+        uptime_key = (
+            "uptime_pct"
+            if "uptime_pct" in rows[0]
+            else "uptime"
+        )
+        uptimes = [r[uptime_key] for r in rows]
 
         result.append({
             "region": region,
