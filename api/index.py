@@ -1,28 +1,38 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import math
-from fastapi import Response
+import os
 
 app = FastAPI()
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Expose-Headers": "Access-Control-Allow-Origin",
-}
-
+# Enable CORS for all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-with open("telemetry.json", "r") as f:
+# Handle preflight requests
+@app.options("/{path:path}")
+def options(path: str):
+    return Response(status_code=200)
+
+
+# Optional: prevent 405 on GET /
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
+
+# Load telemetry file
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+FILE = os.path.join(BASE_DIR, "telemetry.json")
+
+with open(FILE, "r") as f:
     telemetry = json.load(f)
 
 
@@ -32,35 +42,41 @@ class RequestBody(BaseModel):
 
 
 def p95(values):
+    if not values:
+        return 0
+
     values = sorted(values)
-    index = math.ceil(0.95 * len(values)) - 1
-    return values[index]
-
-
-@app.options("/")
-def options():
-    return Response()
+    idx = math.ceil(0.95 * len(values)) - 1
+    return values[idx]
 
 
 @app.post("/")
 def analytics(req: RequestBody):
-
-    result = {}
+    result = []
 
     for region in req.regions:
-
         rows = [r for r in telemetry if r["region"] == region]
 
-        latencies = [r["latency_ms"] for r in rows]
-        uptimes = [r["uptime_pct"] for r in rows]
+        if not rows:
+            continue
 
-        result[region] = {
-            "avg_latency": round(sum(latencies) / len(latencies), 2),
-            "p95_latency": round(p95(latencies), 2),
-            "avg_uptime": round(sum(uptimes) / len(uptimes), 3),
+        latencies = [r["latency_ms"] for r in rows]
+
+        # Use whichever field exists
+        if "uptime_pct" in rows[0]:
+            uptimes = [r["uptime_pct"] for r in rows]
+        else:
+            uptimes = [r["uptime"] for r in rows]
+
+        result.append({
+            "region": region,
+            "avg_latency": sum(latencies) / len(latencies),
+            "p95_latency": p95(latencies),
+            "avg_uptime": sum(uptimes) / len(uptimes),
             "breaches": sum(
-                1 for x in latencies if x > req.threshold_ms
+                1 for x in latencies
+                if x > req.threshold_ms
             )
-        }
+        })
 
     return result
