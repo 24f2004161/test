@@ -5,8 +5,14 @@ import json
 import math
 from fastapi import Response
 
-
 app = FastAPI()
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Expose-Headers": "Access-Control-Allow-Origin",
+}
 
 app.add_middleware(
     CORSMiddleware,
